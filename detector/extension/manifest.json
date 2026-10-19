@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "DNS Shield",
+  "version": "1.0.0",
+  "description": "Real-time DNS spoofing detection — compares browser-resolved IPs against independent DoH resolvers.",
+  "permissions": [
+    "webRequest",
+    "storage",
+    "notifications",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://dns.google/*",
+    "https://cloudflare-dns.com/*",
+    "https://dns.quad9.net/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "DNS Shield — Click to view scan results"
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["trusted.json"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

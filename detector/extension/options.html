@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DNS Shield — Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <svg class="shield-icon" viewBox="0 0 24 24" width="28" height="28">
+        <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z"
+              fill="url(#sg)" stroke="none"/>
+        <path d="M10.5 14.5l-2.5-2.5 1.1-1.1 1.4 1.4 3.9-3.9 1.1 1.1-5 5z"
+              fill="#fff" opacity="0.9"/>
+        <defs>
+          <linearGradient id="sg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#00e676"/>
+            <stop offset="100%" stop-color="#00c853"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <h1>DNS Shield <span class="subtitle">Settings</span></h1>
+    </header>
+
+    <!-- ── General settings ────────────────────────────────────────── -->
+    <section class="card">
+      <h2 class="card-title">General</h2>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label for="opt-notifications">Desktop Notifications</label>
+          <p class="setting-desc">Show alerts for SUSPICIOUS and SPOOFED verdicts.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="opt-notifications" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label for="opt-sensitivity">Detection Sensitivity</label>
+          <p class="setting-desc">Strict mode lowers the score thresholds for flagging domains.</p>
+        </div>
+        <select id="opt-sensitivity" class="select-input">
+          <option value="normal">Normal</option>
+          <option value="strict">Strict</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label for="opt-demo">Demo Mode</label>
+          <p class="setting-desc">Disables the 60 s cache and forces notifications on, so every page load triggers a fresh scan. Ideal for live demos.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="opt-demo">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- ── Trusted domains ─────────────────────────────────────────── -->
+    <section class="card">
+      <h2 class="card-title">Trusted Domains</h2>
+      <p class="setting-desc" style="margin-bottom:12px">
+        Known-good IPs per domain. If the browser connects to an IP
+        not on this list, the trusted-records check will flag it.
+      </p>
+
+      <table class="trusted-table" id="trusted-table">
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Trusted IPs (comma-separated)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="trusted-tbody"></tbody>
+      </table>
+
+      <div class="add-row">
+        <input type="text" id="add-domain" class="text-input" placeholder="example.com">
+        <input type="text" id="add-ips"    class="text-input wide" placeholder="93.184.216.34, 93.184.215.14">
+        <button id="btn-add" class="btn btn-primary btn-sm">+ Add</button>
+      </div>
+    </section>
+
+    <!-- ── Data management ─────────────────────────────────────────── -->
+    <section class="card">
+      <h2 class="card-title">Data</h2>
+
+      <div class="btn-group">
+        <button id="btn-clear-history"  class="btn btn-danger btn-sm">Clear Scan History</button>
+        <button id="btn-clear-baseline" class="btn btn-danger btn-sm">Clear Hash Baseline</button>
+        <button id="btn-reset-trusted"  class="btn btn-ghost btn-sm">Reset Trusted to Defaults</button>
+      </div>
+    </section>
+
+    <p id="toast" class="toast" hidden></p>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DNS Shield — Logic Test</title>
+  <style>
+    body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 20px; }
+    .pass { color: #00e676; }
+    .fail { color: #ff1744; }
+    .info { color: #8b949e; }
+    pre { margin: 4px 0 16px; padding: 8px; background: #161b22; border-radius: 6px; font-size: 12px; overflow-x: auto; }
+    h2 { margin-top: 24px; color: #58a6ff; }
+  </style>
+</head>
+<body>
+<h1>DNS Shield — Detector Logic Tests</h1>
+<div id="results"></div>
+
+<script type="module">
+/**
+ * We test the detector's pure helper functions by extracting and
+ * reimplementing them here (since detector.js uses chrome.storage
+ * which isn't available outside an extension context).
+ *
+ * This verifies the core logic: prefix overlap, private-IP detection,
+ * SHA-256 hashing, and scoring rules.
+ */
+
+const $results = document.getElementById('results');
+let passed = 0;
+let failed = 0;
+
+function log(msg, cls = '') {
+  const p = document.createElement('p');
+  p.className = cls;
+  p.textContent = msg;
+  $results.appendChild(p);
+}
+function pre(obj) {
+  const el = document.createElement('pre');
+  el.textContent = JSON.stringify(obj, null, 2);
+  $results.appendChild(el);
+}
+function assert(name, condition) {
+  if (condition) { log(`  PASS: ${name}`, 'pass'); passed++; }
+  else           { log(`  FAIL: ${name}`, 'fail'); failed++; }
+}
+
+/* ── Reimplementations of detector.js helpers ──────────────────────── */
+
+function prefix16(ip) {
+  const parts = ip.split('.');
+  return `${parts[0]}.${parts[1]}.0.0`;
+}
+
+function prefixesOverlap(ipsA, ipsB) {
+  const setA = new Set(ipsA.map(prefix16));
+  for (const ip of ipsB) {
+    if (setA.has(prefix16(ip))) return true;
+  }
+  return false;
+}
+
+function isPrivateOrReserved(ip) {
+  /* IPv6 checks */
+  if (ip.includes(':')) {
+    const lower = ip.toLowerCase();
+    if (lower === '::1') return true;
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+    if (lower.startsWith('fe80')) return true;
+    return false;
+  }
+  /* IPv4 checks */
+  const [a, b] = ip.split('.').map(Number);
+  if (Number.isNaN(a)) return false;
+  if (a === 127) return true;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 0 || a >= 224) return true;
+  return false;
+}
+
+async function sha256(text) {
+  const data = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/* ── Test: prefix16 ───────────────────────────────────────────────── */
+log('');
+log('=== prefix16 ===', 'info');
+assert('142.250.70.78  -> 142.250.0.0', prefix16('142.250.70.78') === '142.250.0.0');
+assert('10.0.0.1       -> 10.0.0.0',    prefix16('10.0.0.1') === '10.0.0.0');
+assert('192.168.1.100  -> 192.168.0.0',  prefix16('192.168.1.100') === '192.168.0.0');
+
+/* ── Test: prefixesOverlap ────────────────────────────────────────── */
+log('');
+log('=== prefixesOverlap ===', 'info');
+assert('same /16 overlaps',      prefixesOverlap(['142.250.70.78'], ['142.250.99.1']));
+assert('different /16 no overlap', !prefixesOverlap(['142.250.70.78'], ['8.8.8.8']));
+assert('empty A no overlap',     !prefixesOverlap([], ['8.8.8.8']));
+assert('CDN overlap',            prefixesOverlap(['192.178.173.100'], ['192.178.211.101']));
+
+/* ── Test: isPrivateOrReserved ────────────────────────────────────── */
+log('');
+log('=== isPrivateOrReserved ===', 'info');
+assert('10.0.0.1       is private',    isPrivateOrReserved('10.0.0.1'));
+assert('172.16.0.1     is private',    isPrivateOrReserved('172.16.0.1'));
+assert('172.31.255.254 is private',    isPrivateOrReserved('172.31.255.254'));
+assert('172.15.0.1     is NOT private', !isPrivateOrReserved('172.15.0.1'));
+assert('192.168.1.1    is private',    isPrivateOrReserved('192.168.1.1'));
+assert('127.0.0.1      is loopback',   isPrivateOrReserved('127.0.0.1'));
+assert('169.254.1.1    is link-local', isPrivateOrReserved('169.254.1.1'));
+assert('0.0.0.0        is reserved',   isPrivateOrReserved('0.0.0.0'));
+assert('224.0.0.1      is reserved',   isPrivateOrReserved('224.0.0.1'));
+assert('255.255.255.255 is reserved',  isPrivateOrReserved('255.255.255.255'));
+assert('8.8.8.8        is NOT private', !isPrivateOrReserved('8.8.8.8'));
+assert('142.250.70.78  is NOT private', !isPrivateOrReserved('142.250.70.78'));
+
+/* IPv6 tests (Change #2) */
+assert('::1            is IPv6 loopback', isPrivateOrReserved('::1'));
+assert('fc00::1        is unique-local',  isPrivateOrReserved('fc00::1'));
+assert('fd12:3456::1   is unique-local',  isPrivateOrReserved('fd12:3456::1'));
+assert('fe80::1        is link-local',    isPrivateOrReserved('fe80::1'));
+assert('2607:f8b0::1   is NOT private',   !isPrivateOrReserved('2607:f8b0::1'));
+
+/* Explicit assertions for 127.0.0.1 and 192.168.1.99 (Change #2) */
+assert('127.0.0.1      is loopback (explicit)',  isPrivateOrReserved('127.0.0.1'));
+assert('192.168.1.99   is private (explicit)',   isPrivateOrReserved('192.168.1.99'));
+
+/* ── Test: sha256 ─────────────────────────────────────────────────── */
+log('');
+log('=== sha256 ===', 'info');
+const hash1 = await sha256('93.184.216.34');
+assert('sha256 returns 64-char hex', hash1.length === 64);
+assert('sha256 is deterministic',    hash1 === await sha256('93.184.216.34'));
+assert('sha256 differs for diff input', hash1 !== await sha256('8.8.8.8'));
+
+/* ── Test: scoring simulation ─────────────────────────────────────── */
+log('');
+log('=== Scoring simulation ===', 'info');
+
+function simulateScore(observedIp, dohIps, trustedIps, baselineHash) {
+  let score = 0;
+  const reasons = [];
+
+  // Cross-resolver (+50)
+  const allDoH = new Set(dohIps);
+  if (allDoH.size > 0) {
+    const exact = allDoH.has(observedIp);
+    const pref = prefixesOverlap([observedIp], [...allDoH]);
+    if (!exact && !pref) {
+      score += 50;
+      reasons.push('Cross-resolver mismatch');
+    }
+  }
+
+  // Trusted (+30)
+  if (trustedIps && trustedIps.length > 0) {
+    if (!trustedIps.includes(observedIp)) {
+      score += 30;
+      reasons.push('Trusted-record mismatch');
+    }
+  }
+
+  // Private IP (+25)
+  if (isPrivateOrReserved(observedIp)) {
+    score += 25;
+    reasons.push('Private/reserved IP');
+  }
+
+  score = Math.min(score, 100);
+  let verdict;
+  if (score < 30) verdict = 'SAFE';
+  else if (score < 60) verdict = 'SUSPICIOUS';
+  else verdict = 'SPOOFED';
+
+  return { score, verdict, reasons };
+}
+
+// Case 1: Normal — observed IP in DoH answers
+const case1 = simulateScore('142.250.70.78', ['142.250.70.78', '142.250.70.79'], null, null);
+pre(case1);
+assert('Case 1: exact match -> SAFE', case1.verdict === 'SAFE');
+assert('Case 1: score 0', case1.score === 0);
+
+// Case 2: CDN prefix match
+const case2 = simulateScore('142.250.99.1', ['142.250.70.78'], null, null);
+pre(case2);
+assert('Case 2: prefix match -> SAFE', case2.verdict === 'SAFE');
+
+// Case 3: Total mismatch
+const case3 = simulateScore('1.2.3.4', ['142.250.70.78'], null, null);
+pre(case3);
+assert('Case 3: mismatch -> SUSPICIOUS (score 50)', case3.score === 50);
+
+// Case 4: Private IP + mismatch = SPOOFED
+const case4 = simulateScore('192.168.1.1', ['142.250.70.78'], null, null);
+pre(case4);
+assert('Case 4: private + mismatch -> SPOOFED (score 75)', case4.score === 75);
+assert('Case 4: verdict SPOOFED', case4.verdict === 'SPOOFED');
+
+// Case 5: Trusted mismatch only
+const case5 = simulateScore('142.250.70.78', ['142.250.70.78'], ['93.184.216.34'], null);
+pre(case5);
+assert('Case 5: trusted mismatch only -> SUSPICIOUS (score 30)', case5.score === 30);
+
+// Case 6: Everything matches
+const case6 = simulateScore('93.184.216.34', ['93.184.216.34'], ['93.184.216.34'], null);
+pre(case6);
+assert('Case 6: all match -> SAFE (score 0)', case6.score === 0);
+
+// Case 7: Private IP for public domain (no DoH data)
+const case7 = simulateScore('10.0.0.5', [], null, null);
+pre(case7);
+assert('Case 7: private IP, no DoH -> SUSPICIOUS (score 25)', case7.score === 25);
+
+/*
+ * Change #6 — expected-result scenarios.
+ *
+ * Scenario A: example.com observed at 127.0.0.1 with real public DoH
+ * answers (93.184.216.34) and example.com in trusted.json.
+ * Cross-resolver mismatch (+50) + trusted mismatch (+30) + private IP (+25) = 105 → capped at 100.
+ * Verdict MUST be SPOOFED.
+ */
+const caseA = simulateScore('127.0.0.1', ['93.184.216.34'], ['93.184.216.34'], null);
+pre(caseA);
+assert('Case A: example.com@127.0.0.1 -> SPOOFED', caseA.verdict === 'SPOOFED');
+assert('Case A: score capped at 100', caseA.score === 100);
+assert('Case A: has cross-resolver reason', caseA.reasons.includes('Cross-resolver mismatch'));
+assert('Case A: has trusted reason',        caseA.reasons.includes('Trusted-record mismatch'));
+assert('Case A: has private-IP reason',     caseA.reasons.includes('Private/reserved IP'));
+
+/*
+ * Scenario B: normal browsing — observed IP matches DoH answers.
+ * Expected SAFE, score < 30.
+ */
+const caseB = simulateScore('142.250.70.78', ['142.250.70.78', '142.250.70.79'], ['142.250.70.78'], null);
+pre(caseB);
+assert('Case B: normal browsing -> SAFE', caseB.verdict === 'SAFE');
+assert('Case B: score < 30', caseB.score < 30);
+assert('Case B: score is 0 (all match)', caseB.score === 0);
+
+/*
+ * Scenario C: 192.168.1.99 (another common private IP from Change #2).
+ * Cross-resolver mismatch (+50) + private IP (+25) = 75 → SPOOFED.
+ */
+const caseC = simulateScore('192.168.1.99', ['93.184.216.34'], null, null);
+pre(caseC);
+assert('Case C: 192.168.1.99 -> SPOOFED (75)', caseC.score === 75);
+assert('Case C: verdict SPOOFED', caseC.verdict === 'SPOOFED');
+
+/* ── Summary ──────────────────────────────────────────────────────── */
+log('');
+log(`=== RESULTS: ${passed} passed, ${failed} failed ===`, failed > 0 ? 'fail' : 'pass');
+</script>
+</body>
+</html>
